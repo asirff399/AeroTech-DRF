@@ -1,4 +1,4 @@
-from django.shortcuts import render,re
+from django.shortcuts import render
 from rest_framework.views import APIView
 from .serializers import UserRegisterSerializer
 from rest_framework_simplejwt.tokens import AccessToken
