@@ -1,7 +1,8 @@
 from django.shortcuts import render,redirect
 from rest_framework.views import APIView
 from .serializers import UserRegisterSerializer,UserLoginSerializer
-from rest_framework_simplejwt.tokens import RefreshToke,AccessToken
+from rest_framework_simplejwt.tokens import RefreshToken,AccessToken
+from rest_framework_simplejwt.exceptions import InvalidToken,TokenError
 from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from rest_framework.response import Response
@@ -24,7 +25,7 @@ class UserRegisterAPIView(APIView):
             user = serializer.save()
             access = AccessToken.for_user(user=user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-            confirm_link = f'/acount/activate/{uid}/{access}'
+            confirm_link = f'http://127.0.0.1:8000/account/activate/{uid}/{access}'
             email_subject = 'Confirmation Email'
             email_body = render_to_string('Confirmation_mail.html',{'confirm_link':confirm_link})
             email = EmailMultiAlternatives(email_subject,'',to=[user.email])
@@ -36,7 +37,7 @@ class UserRegisterAPIView(APIView):
             return Response({
                 "success":True,
                 "statusCode": status.HTTP_201_CREATED,
-                "message":"Registation successful. Check your mail for confirmation.",
+                "message":"Registation successful. Please Check your mail for confirmation.",
                 "data": response.data,
             },status=status.HTTP_201_CREATED)
         else:
@@ -52,17 +53,25 @@ def activate(self,uid64,token):
         uid = urlsafe_base64_decode(uid64).decode()
         # user = User.__default_manager.get(pk=uid)
         user = User.objects.get(pk=uid)
-    except(User.DoesNotExist):
+    except(User.DoesNotExist,ValueError,TypeError):
         user = None
         return redirect("http://127.0.0.1:8000/account/register/")
     
     try:
+        access = AccessToken(token)
+        token_user_id = access.payload.get('user_id')
+        
+        if user.id != token_user_id:
+            raise InvalidToken("Token dose not match the user.")
+        
         if user is not None and not user.is_active:
             user.is_active = True
             user.save()
             return redirect('http://127.0.0.1:8000/account/login/')
         else:
             return redirect('http://127.0.0.1:8000/account/login/')
+    except (InvalidToken,TokenError):
+        return redirect('http://127.0.0.1:8000/account/register/')
     except Exception:
         return redirect('http://127.0.0.1:8000/account/register/')
     
@@ -70,7 +79,7 @@ class UserLoginAPIView(APIView):
     serializer_class = UserLoginSerializer
     
     def post(self,request):
-        serializer = self.get_serializer(data=request.data)
+        serializer = UserLoginSerializer(data=request.data)
         
         if serializer.is_valid():
             username_or_email = serializer.validated_data['username']
@@ -78,10 +87,10 @@ class UserLoginAPIView(APIView):
             
             user = User.objects.filter(username=username_or_email).first() or User.objects.filter(email=username_or_email).first()
             if user:
-                user = authenticate(username=user.username,password=password)
-                if user:
-                    refresh = RefreshToke.for_user(user)
-                    login(request,user)
+                authenticated_user = authenticate(username=user.username,password=password)
+                if authenticated_user:
+                    refresh = RefreshToken.for_user(authenticated_user)
+                    login(request,authenticated_user)
                     
                     return Response({
                         "success":True,
@@ -90,8 +99,8 @@ class UserLoginAPIView(APIView):
                         "data":{
                             "refresh":str(refresh),
                             "access": str(refresh.access_token),
-                            "user_id":user.id,
-                            "username":user.username,
+                            "user_id":authenticated_user.id,
+                            "username":authenticated_user.username,
                         }
                     },status=status.HTTP_200_OK)
                 else:
@@ -114,9 +123,4 @@ class UserLoginAPIView(APIView):
                 "message":"Invalid input",
                 "error": serializer.errors,
                 "statusCode":status.HTTP_400_BAD_REQUEST
-            },status=status.HTTP_400_BAD_REQUEST)
-            
-                
-        
-        
-        
+            },status=status.HTTP_400_BAD_REQUEST)    
