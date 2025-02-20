@@ -1,12 +1,13 @@
 from django.shortcuts import render,redirect
 from rest_framework.views import APIView
-from .serializers import UserRegisterSerializer,UserLoginSerializer
+from .serializers import UserRegisterSerializer,UserLoginSerializer,UserSerializer
 from rest_framework_simplejwt.tokens import RefreshToken,AccessToken
 from rest_framework_simplejwt.exceptions import InvalidToken,TokenError
 from django.utils.http import urlsafe_base64_encode,urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status,viewsets
+from rest_framework.permissions import IsAuthenticated
 # Mail
 from django.template.loader import render_to_string
 from django.core.mail import EmailMultiAlternatives
@@ -51,7 +52,6 @@ class UserRegisterAPIView(APIView):
 def activate(self,uid64,token):
     try:
         uid = urlsafe_base64_decode(uid64).decode()
-        # user = User.__default_manager.get(pk=uid)
         user = User.objects.get(pk=uid)
     except(User.DoesNotExist,ValueError,TypeError):
         user = None
@@ -124,3 +124,21 @@ class UserLoginAPIView(APIView):
                 "error": serializer.errors,
                 "statusCode":status.HTTP_400_BAD_REQUEST
             },status=status.HTTP_400_BAD_REQUEST)    
+            
+class UserLogoutAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self,request):
+        logout(request)
+        return Response({
+            "success":True,
+            "statusCode": status.HTTP_200_OK,
+            "message":"Successfully logged out."
+        },status=status.HTTP_200_OK)
+        
+class UserViewset(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    # permission_classes = [IsAuthenticated] 
+    
+              
